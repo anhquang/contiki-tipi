@@ -181,7 +181,7 @@ PROCESS_THREAD(udp_client_process, ev, data)
 #if WITH_COMPOWER
   powertrace_sniff(POWERTRACE_ON);
 #endif
-
+NETSTACK_MAC.off(1);
   etimer_set(&periodic, SEND_INTERVAL);
   while(1) {
     PROCESS_YIELD();
@@ -190,8 +190,8 @@ PROCESS_THREAD(udp_client_process, ev, data)
     }
     
     if(etimer_expired(&periodic)) {
-	if (cnt==3)
-	 set_channel(20);
+//	if (cnt==3)
+//	 set_channel(20);
       etimer_reset(&periodic);
       ctimer_set(&backoff_timer, SEND_TIME, send_packet, NULL);
 

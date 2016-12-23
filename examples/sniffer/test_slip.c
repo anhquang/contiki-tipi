@@ -28,18 +28,7 @@
  *
  * This file is part of the Contiki operating system.
  *
- */
-
-/**
- * \file
- *         Andorid sniffer example for the Tmote Sky platform. To be used 
- *         together with the Sniffer 15.4 Andorid app.
- *
- * \author
- *         Daniele Alessandrelli - <d.alessandrelli@sssup.it>
- */
-
-
+**/
 
 #include "contiki.h"
 #include "net/netstack.h"
@@ -53,6 +42,7 @@
 #include "packetutils.h"
 // #include "dev/serial-line.h"
 #include "dev/uart1.h"
+#include "queue.h"
 /*
  * We cannot receive the channel value 13 (0x0D) from the serial line correctly
  * unless we offset the channel number. That is because 0x0D is Carriage Return
@@ -99,7 +89,8 @@
  */
 #define TYPE_STOP_SNIF  0xFB
 #define SERIAL_BUF_SIZE 128
-static char rx_buf[SERIAL_BUF_SIZE];
+
+static packet_t cur_packet;
 static uint8_t reading_flg;
 #define set_channel cc2420_set_channel
 #define NETSTACK_RADIO cc2420_driver
@@ -127,11 +118,12 @@ static const uint8_t magic[] = { 0xC1, 0x1F, 0xFE, 0x72 };
 //static uint8_t channel;
 /*---------------------------------------------------------------------------*/
 
+
 /*---------------------------------------------------------------------------*/
 void
 slip_cmd_output(const uint8_t *data, int data_len)
 {
-  leds_toggle(LEDS_RED);
+//  leds_toggle(LEDS_RED);
   //slip_write(data,data_len);
 
 }
@@ -152,14 +144,14 @@ if (magic[i]!=data[i])
 }
 #if NODEID
 //	if ((char)data[MAGIC_LEN]=='K' && (char)data[MAGIC_LEN+1]=='L' && (char)data[MAGIC_LEN+2]=='M')
-	if (len>=(MAGIC_LEN+81) && data[MAGIC_LEN]==0xbb)
+	if (len==(MAGIC_LEN+81) && data[MAGIC_LEN]==0xbb)
 		leds_toggle(LEDS_BLUE);
 	else{
 	leds_toggle(LEDS_GREEN);
 	printf ("\n len %d \n",len);
 	}
 #else 
-	 if (len>=(MAGIC_LEN+71) && data[MAGIC_LEN]==0xaa)
+	 if (len==(MAGIC_LEN+71) && data[MAGIC_LEN]==0xaa)
         	leds_toggle(LEDS_BLUE)	;
 	else{
 	leds_toggle(LEDS_GREEN);
@@ -180,77 +172,8 @@ sniffer_input()
   uint16_t i;
   uint8_t pkt[256];
   pkt_len = packetbuf_datalen();
-//  phy_pkt_len=pkt_len;
   memcpy(&pkt[MAGIC_LEN],packetbuf_dataptr(),pkt_len);
-//  memcpy(pkt,packetbuf_dataptr(),pkt_len);
-//  rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-//  lqi = packetbuf_attr(PACKETBUF_ATTR_LINK_QUALITY);
-//  timestamp = packetbuf_attr(PACKETBUF_ATTR_TIMESTAMP);
-
-     
-/*    pkt[phy_pkt_len]=rssi;
-    phy_pkt_len++;
-    pkt[phy_pkt_len]=lqi;*/
-//  leds_toggle(LEDS_GREEN);  
-/*
-for (i=0;i<MAGIC_LEN;i++)
-{
-pkt[i]=magic[i];
-}
-*/
-
-//  slip_write(pkt,pkt_len);
-
-
-//  packetbuf_clear();
-
- /* printf("New packet\n");
-  printf("Pakcet len: %u\n", pkt_len);
-  printf("Packet:");
-  for (i = 0; i < pkt_len; i++) {
-    printf(" %2x", pkt[i]);
-  }
-  printf("\n");
-  printf("CRC: none\n");
-  printf("CRC OK: %d\n", !!sniffer_crc_ok);
-  printf("RSSI: %u\n", 255 - rssi);
-  printf("LQI: %u\n", lqi);
-  printf("Timestamp: %u\n", timestamp);*/
-
-  /* magic | type | len | pkt | crc_ok | rssi | lqi */
-/*
-  for (i = 0; i < MAGIC_LEN; i++) {
-    putchar(magic[i]);
-  }
-    putchar(0x02); //version
-    putchar(0x00); //command
-    phy_pkt_len+=2;
-    putchar((phy_pkt_len >> 8) & 0xFF); //length
-    putchar(phy_pkt_len & 0xFF);
-  for (i = 0; i < phy_pkt_len; i++) {
-    putchar(pkt[i]);
-  }
- putchar(rssi & 0xFF);
- putchar(0x80 | (lqi & 0xFF));
-*/
-//    packetbuf_copyfrom(pkt,pkt_len);
-/*  if (MY_TYPE & FIELD_CRC) {
-    putchar(sniffer_crc[0]);
-    putchar(sniffer_crc[1]);
-  }
-  if (MY_TYPE & FIELD_CRC_OK) {
-    putchar(sniffer_crc_ok);
-  }
-  if (MY_TYPE & FIELD_RSSI) {
-    putchar(rssi);
-  }
-  if (MY_TYPE & FIELD_LQI) {
-    putchar(lqi);
-  }
-  if (MY_TYPE & FIELD_TIMESTAMP) {
-    putchar((timestamp >> 8) & 0xFF);
-    putchar(timestamp & 0xFF);
-  }*/
+//  leds_toggle(LEDS_RED);
 }
 
 static void
@@ -260,12 +183,13 @@ slip_radio_cmd_handler(buffer,blen);
 }
 /*------------------------------------------------------------------*/
 void send_packet(){
-char msg[256];
+uint8_t msg[256];
 //putchar(0x44);
 //putchar(0x45);
 //putchar(0x46);
 uint8_t i;
 uint16_t len;
+packet_t pkt;
 for (i=0;i<MAGIC_LEN;i++)
 {
 	msg[i]=magic[i];
@@ -274,29 +198,42 @@ for (i=0;i<MAGIC_LEN;i++)
 msg[MAGIC_LEN]=0xaa;
 for (i=0;i<70;i++)
 msg[MAGIC_LEN+i+1]=0x01;
-len=91;
+len=71;
 #else
 msg[MAGIC_LEN]=0xbb;
 for (i=0;i<80;i++)
 msg[MAGIC_LEN+i+1]=0x01;
-len=101;
+len=81;
 
 #endif
-slip_write(msg,len+MAGIC_LEN);
+
+memcpy(pkt.p,msg,len+MAGIC_LEN);
+pkt.length=len+MAGIC_LEN;
+insert(pkt);
+
+
+//slip_write(msg,len+MAGIC_LEN);
 //putchar(0x01);
 //putchar(0x02);
 //putchar(0x03);
 //printf("Hello!!!\n");
+//leds_toggle(LEDS_RED);
+}
+void transmit_packet(){
+if (!isEmpty())
+{
+cur_packet=removeData();
+slip_write(cur_packet.p,cur_packet.length);
 leds_toggle(LEDS_RED);
 }
-
+}
 /*---------------------------------------------------------------------------*/
 PROCESS(sniffer_process, "Sniffer process");
 AUTOSTART_PROCESSES(&sniffer_process,&slip_process);
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(sniffer_process, ev, data)
 {
-static struct etimer et;
+static struct etimer et,et1;
 //uart1_init(115200);
 //  uart1_init(BAUD2UBR(115200)); //set the baud rate as necessary
 //  uart1_set_input(uart_rx_callback); //set the callback function
@@ -322,7 +259,8 @@ slip_set_raw_input_callback(slip_input_callback);
      }
    }*/
 printf ("NodeID %d \n",NODEID);
-etimer_set(&et, CLOCK_SECOND * 3);
+etimer_set(&et, CLOCK_SECOND * 0.01);
+etimer_set(&et1, CLOCK_SECOND * 0.2);
 
 	while(1){
 	PROCESS_WAIT_EVENT();
@@ -330,6 +268,10 @@ etimer_set(&et, CLOCK_SECOND * 3);
 		 send_packet();
 		etimer_reset(&et);
 	}
+	    if (ev == PROCESS_EVENT_TIMER && etimer_expired(&et1)) {
+                 transmit_packet();
+                etimer_reset(&et1);
+        }
 	}
 //#endif
   PROCESS_END();

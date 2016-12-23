@@ -53,6 +53,7 @@
 #include "packetutils.h"
 // #include "dev/serial-line.h"
 #include "dev/uart1.h"
+#include "queue.h"
 /*
  * We cannot receive the channel value 13 (0x0D) from the serial line correctly
  * unless we offset the channel number. That is because 0x0D is Carriage Return
@@ -106,6 +107,7 @@ static uint16_t length_pkt;
 static uint8_t slip_buf[256];
 static uint16_t len, tmplen;
 static uint8_t lastc;
+static packet_t cur_packet;
 #define set_channel cc2420_set_channel
 #define NETSTACK_RADIO cc2420_driver
 static int
@@ -131,71 +133,6 @@ static const uint8_t magic[] = { 0xC1, 0x1F, 0xFE, 0x72 };
 //static uint8_t snif_enabled;
 //static uint8_t channel;
 /*---------------------------------------------------------------------------*/
-uint8_t slipdev_char_poll(uint8_t *c){
-if (write_pos==read_pos)
-	{
-	//empty buf
-	write_pos=0;
-	read_pos=0;
-	return 0;
-	}
-else{
-	*c=rx_buf[read_pos];
-	read_pos++;
-	return 1;
-}
-}
-uint16_t
-slipdev_poll(uint8_t *outbuf)
-{
-  uint8_t c;
-  
-  while(slipdev_char_poll(&c)) {
-    switch(c) {
-    case SLIP_ESC:
-      lastc = c;
-      break;
-      
-    case SLIP_END:
-      lastc = c;
-      /* End marker found, we copy our input buffer to the uip_buf
-	 buffer and return the size of the packet we copied. */
-//      memcpy(&uip_buf[UIP_LLH_LEN], slip_buf, len);
-	memcpy(outbuf,slip_buf,len);
-      tmplen = len;
-      len = 0;
- //     printf ("\n");
-      return tmplen;
-      
-    default:     
-      if(lastc == SLIP_ESC) {
-	lastc = c;
-	/* Previous read byte was an escape byte, so this byte will be
-	   interpreted differently from others. */
-	switch(c) {
-	case SLIP_ESC_END:
-	  c = SLIP_END;
-	  break;
-	case SLIP_ESC_ESC:
-	  c = SLIP_ESC;
-	  break;
-	}
-      } else {
-	lastc = c;
-      }
-      
-      slip_buf[len] = c;
-      ++len;
-//      printf ("%2x ",c);
-      if(len > 256) {
-	len = 0;
-      }
-    
-      break;
-    }
-  }
-  return 0;
-}
 /*---------------------------------------------------------------------------*/
 void
 slip_cmd_output(const uint8_t *data, int data_len)
@@ -230,28 +167,19 @@ uint16_t length;
 length=data[MAGIC_LEN]*256+data[MAGIC_LEN+1];
 
 
-if (length != (len-MAGIC_LEN-2))
+if (length > (len-MAGIC_LEN-4))
 {
 leds_toggle(LEDS_BLUE);
-//printf ("\n length %d \n",len);
-/*for (i=0;i<len;i++)
-{
-	printf ("%2x ",data[i]);
-}
-printf ("\n");*/
 return 1;
 }
-/*
-for (i=MAGIC_LEN+2;i<len;i++)
-{
-printf (" %2x ",data[i]);
-}
-printf("\n");*/
+uint16_t timestamp;
+timestamp=data[MAGIC_LEN+length+2]*256+data[MAGIC_LEN+length+3];
 
-while(NETSTACK_RADIO.pending_packet() || NETSTACK_RADIO.receiving_packet());
+//while(NETSTACK_RADIO.pending_packet() || NETSTACK_RADIO.receiving_packet());
 packetbuf_clear();
 memcpy(packetbuf_dataptr(),&data[MAGIC_LEN+2], length);
 packetbuf_set_datalen(length);
+//packetbuf_set_attr(PACKETBUF_ATTR_TIMESTAMP,timestamp);
 NETSTACK_RADIO.send(packetbuf_dataptr(),length);
 
 leds_toggle(LEDS_RED);
@@ -269,7 +197,10 @@ sniffer_input()
 //  uint16_t timestamp;
   uint16_t i;
   uint8_t pkt[256];
+ uint16_t timestamp;
+  packet_t mpkt;
   pkt_len = packetbuf_datalen();
+  timestamp = packetbuf_attr(PACKETBUF_ATTR_TIMESTAMP);
 //use slip
 	if (pkt_len >0)
 	{
@@ -281,44 +212,41 @@ sniffer_input()
 	//length
 	pkt[MAGIC_LEN]=(pkt_len >> 8) & 0xFF;
 	pkt[MAGIC_LEN+1]=pkt_len & 0xFF;
+	pkt[pkt_len+MAGIC_LEN+2]=((timestamp >> 8) & 0xFF);
+	pkt[pkt_len+MAGIC_LEN+3]=timestamp & 0xFF;
         //write
-	 slip_write(pkt,pkt_len+MAGIC_LEN+2);
-	 packetbuf_clear();
+	memcpy(mpkt.p,pkt,pkt_len+MAGIC_LEN+4);
+	mpkt.length=pkt_len+MAGIC_LEN+4;
+	insert(mpkt);
+//	 slip_write(pkt,pkt_len+MAGIC_LEN+2);
+
+//	 packetbuf_clear();
 }
 }
-/*--------------------------------------------------------------*/
-int write_to_buf(unsigned char c){
-uint16_t plength;
-rx_buf[write_pos]=(uint8_t)c;
-write_pos++;
-plength=slipdev_poll(recv_buf);
-if (plength>0)
-	slip_radio_cmd_handler(recv_buf,plength);
-return 0;
+/*-----------------------------------------------------------*/
+void transmit_packet(){
+if (!isEmpty())
+{
+cur_packet=removeData();
+slip_write(cur_packet.p,cur_packet.length);
+leds_toggle(LEDS_RED);
+}
 }
 /*-----------------------------------------------------------*/
 static void
-slip_input_callback(uint8_t* buffer,uint16_t blen)
+slip_input_callback(const uint8_t* buffer,uint16_t blen)
 {
-uint16_t i;
-/*for (i=0;i<blen;i++)
-printf ("%2x ",buffer[i]);
-printf ("\n len %d \n",blen);*/
 slip_radio_cmd_handler(buffer,blen);
 }
 /*------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 PROCESS(sniffer_process, "Sniffer process");
-AUTOSTART_PROCESSES(&sniffer_process,&slip_process);
+AUTOSTART_PROCESSES(&sniffer_process);
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(sniffer_process, ev, data)
 {
 static struct etimer et;
 // use slip
-//uart1_set_input(write_to_buf); //set the callback function
-uart1_init(BAUD2UBR(115200));
-uart1_set_input(slip_input_byte);
-//slip_arch_init(UART1_BAUD2UBR(115200ul));
 slip_set_raw_input_callback(slip_input_callback);
 //read_pos=0;
 //write_pos=0;
@@ -331,18 +259,18 @@ slip_set_raw_input_callback(slip_input_callback);
   NETSTACK_RADIO.on();
   NETSTACK_MAC.off(1);
   set_channel(CHANNEL);
-/*
-etimer_set(&et, CLOCK_SECOND * 10);
+
+etimer_set(&et, CLOCK_SECOND * 0.05);
 
 	while(1){
 	PROCESS_WAIT_EVENT();
 	    if (ev == PROCESS_EVENT_TIMER && etimer_expired(&et)) {
 //		 send_packet();
-		slip_radio_cmd_handler(NULL,0);
+		transmit_packet();
 //		 leds_toggle(LEDS_RED);
 		etimer_reset(&et);
 	}
-	}*/
+	}
 //#endif
   PROCESS_END();
 }

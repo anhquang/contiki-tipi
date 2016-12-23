@@ -58,4 +58,6 @@
 
 #define CMD_CONF_HANDLERS slip_radio_cmd_handler
 #define CMD_CONF_OUTPUT slip_cmd_output
+
+#define WITH_UIP 1
 #endif /* PROJECT_CONF_H_ */

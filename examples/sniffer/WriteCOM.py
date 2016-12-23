@@ -22,26 +22,12 @@ ser = serial.Serial(
 #   xonxoff=False,\
 #   rtscts=False,\
 #   timeout=0.001)
-
-
-
 usleep = lambda x: time.sleep(x/1000000.0)
-#if ser.isOpen():
-#	try:
-#		ser.flushInput()
-#		ser.flushOutput()
-#	except Exception, e1:
-#        	print "error communicating...: " + str(e1)
-while True:
-	numbytes=ser.inWaiting()
-	if numbytes>0:
-		output = ser.read(numbytes) # read output
-#		sys.stdout.flush()
-		print("a"+output.encode('hex'))
-		sys.stdout.flush()
-#		serout.write(output)
-#		serout.flushOutput()
-#		usleep(10)
-	else:
-		print "b"
-		sys.stdout.flush()
+if ser.isOpen():
+	try:
+		ser.flushInput()
+		ser.flushOutput()
+	except Exception, e1:
+        	print "error communicating...: " + str(e1)
+inputstr=sys.argv[3]
+ser.write(inputstr.decode('hex'))

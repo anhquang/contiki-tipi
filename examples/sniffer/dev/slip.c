@@ -60,8 +60,8 @@ uint16_t slip_rubbish, slip_twopackets, slip_overflow, slip_ip_drop;
 #endif
 
 /* Must be at least one byte larger than UIP_BUFSIZE! */
-//#define RX_BUFSIZE (UIP_BUFSIZE - UIP_LLH_LEN + 16)
-#define RX_BUFSIZE 2048
+#define RX_BUFSIZE (UIP_BUFSIZE - UIP_LLH_LEN + 16)
+
 enum {
   STATE_TWOPACKETS = 0,	/* We have 2 packets and drop incoming data. */
   STATE_OK = 1,
@@ -168,6 +168,7 @@ rxbuf_init(void)
 static uint16_t
 slip_poll_handler(uint8_t *outbuf, uint16_t blen)
 {
+
   /*
    * Interrupt can not change begin but may change pkt_end.
    * If pkt_end != begin it will not change again.
@@ -226,8 +227,7 @@ PROCESS_THREAD(slip_process, ev, data)
 				UIP_BUFSIZE - UIP_LLH_LEN);
     if (raw_input_callback){
 	raw_input_callback(&uip_buf[UIP_LLH_LEN],uip_len);
-//	raw_input_callback(rxbuf,RX_BUFSIZE);
-}
+    }
 
   }
 
@@ -237,7 +237,6 @@ PROCESS_THREAD(slip_process, ev, data)
 int
 slip_input_byte(unsigned char c)
 {
-printf ("%2x ",(uint8_t)c);
   switch(state) {
   case STATE_RUBBISH:
     if(c == SLIP_END) {
@@ -305,10 +304,10 @@ printf ("%2x ",(uint8_t)c);
   }
 
   /* There could be a separate poll routine for this. */
- // if(c == 'T' && rxbuf[begin] == 'C') {
-  //  process_poll(&slip_process);
- //   return 1;
-  //}
+/*  if(c == 'T' && rxbuf[begin] == 'C') {
+    process_poll(&slip_process);
+    return 1;
+  }*/
 
   return 0;
 }
